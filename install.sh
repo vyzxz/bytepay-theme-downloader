@@ -14,7 +14,7 @@ MAGENTA='\033[0;35m'
 NC='\033[0m' # No Color
 
 # Configuration - CHANGE THIS TO YOUR ACTUAL DOMAIN
-API_URL="https://your-domain.com/api"  # ← CHANGE THIS!
+API_URL="bot-1.hexgame.fun:25591/api"  # ← CHANGE THIS!
 # For local testing: API_URL="http://localhost:5000/api"
 PAYMENTER_PATH="/var/www/paymenter"
 THEME_NAME="bytepays"
