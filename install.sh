@@ -14,11 +14,46 @@ MAGENTA='\033[0;35m'
 NC='\033[0m' # No Color
 
 # Configuration - CHANGE THIS TO YOUR ACTUAL DOMAIN
-API_URL="bot-1.hexgame.fun:25591/api"  # ← CHANGE THIS!
+API_URL="https://your-domain.com/api"  # ← CHANGE THIS!
 # For local testing: API_URL="http://localhost:5000/api"
 PAYMENTER_PATH="/var/www/paymenter"
 THEME_NAME="bytepays"
 TEMP_DIR="/tmp/bytepays-install"
+
+# Parse command line arguments
+EMAIL=""
+LICENSE_KEY=""
+NON_INTERACTIVE=0
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --email)
+            EMAIL="$2"
+            shift 2
+            ;;
+        --key)
+            LICENSE_KEY="$2"
+            shift 2
+            ;;
+        --non-interactive)
+            NON_INTERACTIVE=1
+            shift
+            ;;
+        --help)
+            echo "Usage: $0 [OPTIONS]"
+            echo "Options:"
+            echo "  --email EMAIL        Your email address"
+            echo "  --key KEY            Your license key"
+            echo "  --non-interactive    Run without prompts"
+            echo "  --help               Show this help"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
 
 # Banner
 clear
@@ -91,19 +126,40 @@ fi
 
 echo -e "${GREEN}✅ All required tools are installed${NC}"
 
-# Get user input
+# Get user input (interactive or from arguments)
 echo ""
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${MAGENTA}📝 Please enter your license details:${NC}"
+echo -e "${MAGENTA}📝 License Details:${NC}"
 echo ""
-echo -e "${YELLOW}📧 Email address:${NC}"
-read -r email
 
-echo -e "${YELLOW}🔑 License key:${NC}"
-read -r license_key
+# Get email
+if [[ -n "$EMAIL" ]]; then
+    echo -e "${GREEN}✅ Using email: $EMAIL${NC}"
+else
+    if [ $NON_INTERACTIVE -eq 1 ]; then
+        echo -e "${RED}❌ Email required in non-interactive mode${NC}"
+        echo -e "${YELLOW}   Use: --email your@email.com${NC}"
+        exit 1
+    fi
+    echo -e "${YELLOW}📧 Email address:${NC}"
+    read -r EMAIL
+fi
+
+# Get license key
+if [[ -n "$LICENSE_KEY" ]]; then
+    echo -e "${GREEN}✅ Using license key: $LICENSE_KEY${NC}"
+else
+    if [ $NON_INTERACTIVE -eq 1 ]; then
+        echo -e "${RED}❌ License key required in non-interactive mode${NC}"
+        echo -e "${YELLOW}   Use: --key YOUR-KEY-HERE${NC}"
+        exit 1
+    fi
+    echo -e "${YELLOW}🔑 License key:${NC}"
+    read -r LICENSE_KEY
+fi
 
 # Validate input
-if [[ -z "$email" || -z "$license_key" ]]; then
+if [[ -z "$EMAIL" || -z "$LICENSE_KEY" ]]; then
     echo -e "${RED}❌ Email and license key are required${NC}"
     exit 1
 fi
@@ -115,12 +171,12 @@ mkdir -p "$TEMP_DIR"
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${BLUE}🔍 Step 3: Verifying license key...${NC}"
-echo -e "${CYAN}   Email: $email${NC}"
-echo -e "${CYAN}   License: $license_key${NC}"
+echo -e "${CYAN}   Email: $EMAIL${NC}"
+echo -e "${CYAN}   License: $LICENSE_KEY${NC}"
 
 response=$(curl -s -X POST "$API_URL/activate" \
     -H "Content-Type: application/json" \
-    -d "{\"email\":\"$email\",\"key\":\"$license_key\"}")
+    -d "{\"email\":\"$EMAIL\",\"key\":\"$LICENSE_KEY\"}")
 
 if echo "$response" | grep -q '"success":true'; then
     echo -e "${GREEN}✅ License verified successfully!${NC}"
@@ -136,7 +192,7 @@ echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${BLUE}⬇️  Step 4: Downloading BytePays Theme...${NC}"
 
-download_url="$API_URL/download?key=$license_key"
+download_url="$API_URL/download?key=$LICENSE_KEY"
 curl -# -L -o "$TEMP_DIR/theme.zip" "$download_url"
 
 if [ -f "$TEMP_DIR/theme.zip" ] && [ -s "$TEMP_DIR/theme.zip" ]; then
@@ -270,18 +326,23 @@ echo "║                                                                   ║"
 echo "╚═══════════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
-# Ask to clear cache
-echo ""
-echo -e "${YELLOW}Would you like to clear Paymenter cache now? (y/n)${NC}"
-read -r clear_cache
+# Ask to clear cache (only in interactive mode)
+if [ $NON_INTERACTIVE -eq 0 ]; then
+    echo ""
+    echo -e "${YELLOW}Would you like to clear Paymenter cache now? (y/n)${NC}"
+    read -r clear_cache
 
-if [[ "$clear_cache" == "y" || "$clear_cache" == "Y" ]]; then
-    echo -e "${BLUE}Clearing cache...${NC}"
-    cd "$PAYMENTER_PATH"
-    php artisan cache:clear
-    php artisan view:clear
-    php artisan config:clear
-    echo -e "${GREEN}✅ Cache cleared!${NC}"
+    if [[ "$clear_cache" == "y" || "$clear_cache" == "Y" ]]; then
+        echo -e "${BLUE}Clearing cache...${NC}"
+        cd "$PAYMENTER_PATH"
+        php artisan cache:clear
+        php artisan view:clear
+        php artisan config:clear
+        echo -e "${GREEN}✅ Cache cleared!${NC}"
+    fi
+else
+    echo ""
+    echo -e "${YELLOW}💡 To clear cache: cd $PAYMENTER_PATH && php artisan cache:clear${NC}"
 fi
 
 echo ""
