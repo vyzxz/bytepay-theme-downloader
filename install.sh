@@ -152,32 +152,49 @@ else
     read -r EMAIL
 fi
 
-# Get license key
+# Get license key (if provided, skip generation)
 if [[ -n "$LICENSE_KEY" ]]; then
-    echo -e "${GREEN}✅ Using license key: $LICENSE_KEY${NC}"
+    echo -e "${GREEN}✅ Using provided license key: $LICENSE_KEY${NC}"
 else
     if [ $NON_INTERACTIVE -eq 1 ]; then
         echo -e "${RED}❌ License key required in non-interactive mode${NC}"
-        echo -e "${YELLOW}   Use: --key YOUR-KEY-HERE${NC}"
+        echo -e "${YELLOW}   Use: --key YOUR-KEY-HERE or let the script generate one${NC}"
         exit 1
     fi
-    echo -e "${YELLOW}🔑 License key:${NC}"
+    echo -e "${YELLOW}🔑 License key (press Enter to generate new one):${NC}"
     read -r LICENSE_KEY
-fi
-
-# Validate input
-if [[ -z "$EMAIL" || -z "$LICENSE_KEY" ]]; then
-    echo -e "${RED}❌ Email and license key are required${NC}"
-    exit 1
 fi
 
 # Create temp directory
 mkdir -p "$TEMP_DIR"
 
-# Step 3: Test API connection first
+# If no license key provided, generate one
+if [[ -z "$LICENSE_KEY" ]]; then
+    echo ""
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}🔑 Step 3: Generating new license key...${NC}"
+    
+    response=$(curl -s -X POST "$API_URL/generate-free" \
+        -H "Content-Type: application/json" \
+        -d "{\"email\":\"$EMAIL\"}")
+    
+    if echo "$response" | grep -q '"success":true'; then
+        LICENSE_KEY=$(echo "$response" | grep -o '"licenseKey":"[^"]*"' | cut -d'"' -f4)
+        echo -e "${GREEN}✅ License generated successfully!${NC}"
+        echo -e "${CYAN}   Your license key: $LICENSE_KEY${NC}"
+        echo -e "${YELLOW}   📧 Also sent to: $EMAIL${NC}"
+    else
+        echo -e "${RED}❌ Failed to generate license${NC}"
+        echo -e "${YELLOW}   Response: $response${NC}"
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+fi
+
+# Step 4: Test API connection
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}🔍 Step 3: Testing API connection...${NC}"
+echo -e "${BLUE}🔍 Step 4: Testing API connection...${NC}"
 echo -e "${CYAN}   API URL: $API_URL${NC}"
 
 # Test if API is reachable
@@ -190,10 +207,10 @@ else
     exit 1
 fi
 
-# Step 4: Verify license
+# Step 5: Verify license
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}🔍 Step 4: Verifying license key...${NC}"
+echo -e "${BLUE}🔍 Step 5: Verifying license key...${NC}"
 echo -e "${CYAN}   Email: $EMAIL${NC}"
 echo -e "${CYAN}   License: $LICENSE_KEY${NC}"
 
@@ -212,10 +229,10 @@ else
     exit 1
 fi
 
-# Step 5: Download theme
+# Step 6: Download theme
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}⬇️  Step 5: Downloading BytePays Theme...${NC}"
+echo -e "${BLUE}⬇️  Step 6: Downloading BytePays Theme...${NC}"
 
 download_url="$API_URL/download?key=$LICENSE_KEY"
 curl -# -L -o "$TEMP_DIR/theme.zip" "$download_url"
@@ -229,10 +246,10 @@ else
     exit 1
 fi
 
-# Step 6: Validate theme package
+# Step 7: Validate theme package
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}🔍 Step 6: Validating theme package...${NC}"
+echo -e "${BLUE}🔍 Step 7: Validating theme package...${NC}"
 
 if unzip -t "$TEMP_DIR/theme.zip" &> /dev/null; then
     echo -e "${GREEN}✅ Theme package is valid${NC}"
@@ -242,10 +259,10 @@ else
     exit 1
 fi
 
-# Step 7: Backup existing theme
+# Step 8: Backup existing theme
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}💾 Step 7: Backing up existing theme...${NC}"
+echo -e "${BLUE}💾 Step 8: Backing up existing theme...${NC}"
 
 if [ -d "$PAYMENTER_PATH/themes/$THEME_NAME" ]; then
     backup_name="bytepays_backup_$(date +%Y%m%d_%H%M%S)"
@@ -256,10 +273,10 @@ else
     echo -e "${GREEN}   No existing theme found${NC}"
 fi
 
-# Step 8: Extract theme
+# Step 9: Extract theme
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}📦 Step 8: Installing BytePays Theme...${NC}"
+echo -e "${BLUE}📦 Step 9: Installing BytePays Theme...${NC}"
 
 # Create themes directory if it doesn't exist
 mkdir -p "$PAYMENTER_PATH/themes"
@@ -280,10 +297,10 @@ else
     exit 1
 fi
 
-# Step 9: Set permissions
+# Step 10: Set permissions
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}🔧 Step 9: Setting permissions...${NC}"
+echo -e "${BLUE}🔧 Step 10: Setting permissions...${NC}"
 
 # Detect web server user
 if id "www-data" &>/dev/null; then
@@ -299,10 +316,10 @@ chmod -R 755 "$PAYMENTER_PATH/themes/$THEME_NAME"
 
 echo -e "${GREEN}✅ Permissions set (owner: $WEB_USER)${NC}"
 
-# Step 10: Verify installation
+# Step 11: Verify installation
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}✅ Step 10: Verifying installation...${NC}"
+echo -e "${BLUE}✅ Step 11: Verifying installation...${NC}"
 
 if [ -d "$PAYMENTER_PATH/themes/$THEME_NAME" ]; then
     # Check for theme.json
@@ -334,6 +351,8 @@ echo "║                                                                   ║"
 echo "║  BytePays Theme has been installed successfully!                  ║"
 echo "║                                                                   ║"
 echo "║  📍 Location: $PAYMENTER_PATH/themes/$THEME_NAME                  ║"
+echo "║                                                                   ║"
+echo "║  🔑 Your License Key: $LICENSE_KEY                                ║"
 echo "║                                                                   ║"
 echo "║  🎨 Next Steps:                                                   ║"
 echo "║     1. Login to Paymenter admin panel                             ║"
