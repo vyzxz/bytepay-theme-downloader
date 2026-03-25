@@ -13,8 +13,9 @@ CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
 NC='\033[0m' # No Color
 
-# Configuration
-API_URL="bot-1.hexgame.fun:25591/api"  # CHANGE THIS TO YOUR DOMAIN
+# Configuration - CHANGE THIS TO YOUR ACTUAL DOMAIN
+API_URL="https://your-domain.com/api"  # ← CHANGE THIS!
+# For local testing: API_URL="http://localhost:5000/api"
 PAYMENTER_PATH="/var/www/paymenter"
 THEME_NAME="bytepays"
 TEMP_DIR="/tmp/bytepays-install"
