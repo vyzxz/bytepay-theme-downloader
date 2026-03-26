@@ -13,11 +13,8 @@ CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
 NC='\033[0m' # No Color
 
-# Configuration - CHANGE THIS TO YOUR ACTUAL DOMAIN
+# Configuration
 API_URL="http://bot-1.hexgame.fun:25591/api"  # ← CHANGE THIS to your actual API URL!
-# For production: API_URL="https://yourdomain.com/api"
-# For testing: API_URL="http://localhost:5000/api"
-
 PAYMENTER_PATH="/var/www/paymenter"
 THEME_NAME="bytepays"
 TEMP_DIR="/tmp/bytepays-install"
@@ -26,6 +23,7 @@ TEMP_DIR="/tmp/bytepays-install"
 EMAIL=""
 LICENSE_KEY=""
 NON_INTERACTIVE=0
+GENERATE_NEW=0
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -36,6 +34,10 @@ while [[ $# -gt 0 ]]; do
         --key)
             LICENSE_KEY="$2"
             shift 2
+            ;;
+        --generate)
+            GENERATE_NEW=1
+            shift
             ;;
         --non-interactive)
             NON_INTERACTIVE=1
@@ -49,10 +51,16 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
             echo "  --email EMAIL        Your email address"
-            echo "  --key KEY            Your license key"
+            echo "  --key KEY            Your existing license key"
+            echo "  --generate           Generate a new license key"
             echo "  --api URL            API URL (default: $API_URL)"
             echo "  --non-interactive    Run without prompts"
             echo "  --help               Show this help"
+            echo ""
+            echo "Examples:"
+            echo "  sudo bash install.sh --email user@example.com --key VYZX-XXXX-XXXX"
+            echo "  sudo bash install.sh --email user@example.com --generate"
+            echo "  sudo bash install.sh  # Interactive mode"
             exit 0
             ;;
         *)
@@ -61,6 +69,15 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Detect web server user
+if id "www-data" &>/dev/null; then
+    WEB_USER="www-data"
+elif id "nginx" &>/dev/null; then
+    WEB_USER="nginx"
+else
+    WEB_USER="www-data"
+fi
 
 # Banner
 clear
@@ -71,6 +88,7 @@ echo "║     🚀 BytePays Theme Installer v2.0.0                            �
 echo "║     By VyzxStudios                                                ║"
 echo "║                                                                   ║"
 echo "║     Premium Paymenter Theme with Futuristic Design                ║"
+echo "║     ✨ Unlimited downloads | Auto build | Permissions fixed       ║"
 echo "║                                                                   ║"
 echo "╚═══════════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
@@ -82,15 +100,28 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Check if Paymenter exists
+# Step 1: Install required packages
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}🔍 Step 1: Checking Paymenter installation...${NC}"
+echo -e "${BLUE}📦 Step 1: Installing required dependencies...${NC}"
+
+apt update -qq
+apt install -y curl unzip nodejs npm git
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ Failed to install dependencies${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✅ Dependencies installed${NC}"
+
+# Step 2: Check if Paymenter exists
+echo ""
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BLUE}🔍 Step 2: Checking Paymenter installation...${NC}"
 
 if [ ! -d "$PAYMENTER_PATH" ]; then
     echo -e "${RED}❌ Paymenter not found at $PAYMENTER_PATH${NC}"
     echo -e "${YELLOW}   Please make sure Paymenter is installed first.${NC}"
-    echo -e "${YELLOW}   Expected location: $PAYMENTER_PATH${NC}"
     exit 1
 fi
 
@@ -102,38 +133,7 @@ if [ -f "$PAYMENTER_PATH/artisan" ]; then
     echo -e "${GREEN}✅ Paymenter version: $PAYMENTER_VERSION${NC}"
 fi
 
-# Check for required tools
-echo ""
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}🔧 Step 2: Checking required tools...${NC}"
-
-TOOLS_MISSING=0
-if ! command -v curl &> /dev/null; then
-    echo -e "${YELLOW}📦 Installing curl...${NC}"
-    apt-get update && apt-get install -y curl
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}❌ Failed to install curl${NC}"
-        TOOLS_MISSING=1
-    fi
-fi
-
-if ! command -v unzip &> /dev/null; then
-    echo -e "${YELLOW}📦 Installing unzip...${NC}"
-    apt-get install -y unzip
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}❌ Failed to install unzip${NC}"
-        TOOLS_MISSING=1
-    fi
-fi
-
-if [ $TOOLS_MISSING -eq 1 ]; then
-    echo -e "${RED}❌ Required tools could not be installed${NC}"
-    exit 1
-fi
-
-echo -e "${GREEN}✅ All required tools are installed${NC}"
-
-# Get user input (interactive or from arguments)
+# Step 3: Get user input
 echo ""
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${MAGENTA}📝 License Details:${NC}"
@@ -145,31 +145,42 @@ if [[ -n "$EMAIL" ]]; then
 else
     if [ $NON_INTERACTIVE -eq 1 ]; then
         echo -e "${RED}❌ Email required in non-interactive mode${NC}"
-        echo -e "${YELLOW}   Use: --email your@email.com${NC}"
         exit 1
     fi
     echo -e "${YELLOW}📧 Email address:${NC}"
     read -r EMAIL
 fi
 
-# Get license key (if provided, skip generation)
-if [[ -n "$LICENSE_KEY" ]]; then
-    echo -e "${GREEN}✅ Using provided license key: $LICENSE_KEY${NC}"
-else
-    if [ $NON_INTERACTIVE -eq 1 ]; then
-        echo -e "${RED}❌ License key required in non-interactive mode${NC}"
-        echo -e "${YELLOW}   Use: --key YOUR-KEY-HERE or let the script generate one${NC}"
-        exit 1
-    fi
-    echo -e "${YELLOW}🔑 License key (press Enter to generate new one):${NC}"
-    read -r LICENSE_KEY
+# Validate email
+if [[ -z "$EMAIL" ]]; then
+    echo -e "${RED}❌ Email is required${NC}"
+    exit 1
 fi
 
 # Create temp directory
 mkdir -p "$TEMP_DIR"
 
-# If no license key provided, generate one
-if [[ -z "$LICENSE_KEY" ]]; then
+# Handle license key
+NEED_GENERATION=0
+
+if [[ -n "$LICENSE_KEY" ]]; then
+    echo -e "${GREEN}✅ Using provided license key: $LICENSE_KEY${NC}"
+elif [[ $GENERATE_NEW -eq 1 ]]; then
+    NEED_GENERATION=1
+elif [ $NON_INTERACTIVE -eq 0 ]; then
+    echo ""
+    echo -e "${YELLOW}🔑 Do you have a license key? (y/n)${NC}"
+    read -r has_key
+    if [[ "$has_key" == "n" || "$has_key" == "N" ]]; then
+        NEED_GENERATION=1
+    else
+        echo -e "${YELLOW}🔑 Enter your license key:${NC}"
+        read -r LICENSE_KEY
+    fi
+fi
+
+# Generate new license if needed
+if [[ $NEED_GENERATION -eq 1 ]]; then
     echo ""
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}🔑 Step 3: Generating new license key...${NC}"
@@ -185,25 +196,26 @@ if [[ -z "$LICENSE_KEY" ]]; then
         echo -e "${YELLOW}   📧 Also sent to: $EMAIL${NC}"
     else
         echo -e "${RED}❌ Failed to generate license${NC}"
-        echo -e "${YELLOW}   Response: $response${NC}"
         rm -rf "$TEMP_DIR"
         exit 1
     fi
+fi
+
+# Validate we have a license key
+if [[ -z "$LICENSE_KEY" ]]; then
+    echo -e "${RED}❌ No license key provided${NC}"
+    exit 1
 fi
 
 # Step 4: Test API connection
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${BLUE}🔍 Step 4: Testing API connection...${NC}"
-echo -e "${CYAN}   API URL: $API_URL${NC}"
 
-# Test if API is reachable
 if curl -s --connect-timeout 5 "$API_URL/health" &> /dev/null; then
     echo -e "${GREEN}✅ API is reachable${NC}"
 else
     echo -e "${RED}❌ Cannot reach API at $API_URL${NC}"
-    echo -e "${YELLOW}   Please check your API URL and network connection${NC}"
-    echo -e "${YELLOW}   You can specify API URL with: --api http://your-server.com/api${NC}"
     exit 1
 fi
 
@@ -211,20 +223,15 @@ fi
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${BLUE}🔍 Step 5: Verifying license key...${NC}"
-echo -e "${CYAN}   Email: $EMAIL${NC}"
-echo -e "${CYAN}   License: $LICENSE_KEY${NC}"
 
 response=$(curl -s -X POST "$API_URL/activate" \
     -H "Content-Type: application/json" \
     -d "{\"email\":\"$EMAIL\",\"key\":\"$LICENSE_KEY\"}")
 
-echo -e "${CYAN}   Response: $response${NC}"
-
 if echo "$response" | grep -q '"success":true'; then
     echo -e "${GREEN}✅ License verified successfully!${NC}"
 else
-    echo -e "${RED}❌ Invalid license key or API error${NC}"
-    echo -e "${YELLOW}   Response: $response${NC}"
+    echo -e "${RED}❌ Invalid license key${NC}"
     rm -rf "$TEMP_DIR"
     exit 1
 fi
@@ -237,27 +244,26 @@ echo -e "${BLUE}⬇️  Step 6: Downloading BytePays Theme...${NC}"
 download_url="$API_URL/download?key=$LICENSE_KEY"
 curl -# -L -o "$TEMP_DIR/theme.zip" "$download_url"
 
-if [ -f "$TEMP_DIR/theme.zip" ] && [ -s "$TEMP_DIR/theme.zip" ]; then
-    file_size=$(du -h "$TEMP_DIR/theme.zip" | cut -f1)
-    echo -e "${GREEN}✅ Theme downloaded successfully (${file_size})${NC}"
-else
+if [ ! -f "$TEMP_DIR/theme.zip" ] || [ ! -s "$TEMP_DIR/theme.zip" ]; then
     echo -e "${RED}❌ Failed to download theme${NC}"
     rm -rf "$TEMP_DIR"
     exit 1
 fi
+
+file_size=$(du -h "$TEMP_DIR/theme.zip" | cut -f1)
+echo -e "${GREEN}✅ Theme downloaded (${file_size})${NC}"
 
 # Step 7: Validate theme package
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${BLUE}🔍 Step 7: Validating theme package...${NC}"
 
-if unzip -t "$TEMP_DIR/theme.zip" &> /dev/null; then
-    echo -e "${GREEN}✅ Theme package is valid${NC}"
-else
+if ! unzip -t "$TEMP_DIR/theme.zip" &> /dev/null; then
     echo -e "${RED}❌ Theme package is corrupted${NC}"
     rm -rf "$TEMP_DIR"
     exit 1
 fi
+echo -e "${GREEN}✅ Theme package is valid${NC}"
 
 # Step 8: Backup existing theme
 echo ""
@@ -269,8 +275,6 @@ if [ -d "$PAYMENTER_PATH/themes/$THEME_NAME" ]; then
     echo -e "${YELLOW}   Existing theme found, creating backup...${NC}"
     mv "$PAYMENTER_PATH/themes/$THEME_NAME" "$PAYMENTER_PATH/themes/$backup_name"
     echo -e "${GREEN}✅ Backup created: $backup_name${NC}"
-else
-    echo -e "${GREEN}   No existing theme found${NC}"
 fi
 
 # Step 9: Extract theme
@@ -278,58 +282,77 @@ echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${BLUE}📦 Step 9: Installing BytePays Theme...${NC}"
 
-# Create themes directory if it doesn't exist
 mkdir -p "$PAYMENTER_PATH/themes"
-
-# Extract theme
 unzip -q "$TEMP_DIR/theme.zip" -d "$PAYMENTER_PATH/themes/$THEME_NAME"
 
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✅ Theme extracted successfully${NC}"
-else
+if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Failed to extract theme${NC}"
-    # Restore backup if extraction failed
-    if [ -d "$PAYMENTER_PATH/themes/$backup_name" ]; then
-        mv "$PAYMENTER_PATH/themes/$backup_name" "$PAYMENTER_PATH/themes/$THEME_NAME"
-        echo -e "${YELLOW}   Restored from backup${NC}"
-    fi
     rm -rf "$TEMP_DIR"
     exit 1
 fi
+echo -e "${GREEN}✅ Theme extracted${NC}"
 
-# Step 10: Set permissions
+# Step 10: Fix permissions
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${BLUE}🔧 Step 10: Setting permissions...${NC}"
 
-# Detect web server user
-if id "www-data" &>/dev/null; then
-    WEB_USER="www-data"
-elif id "nginx" &>/dev/null; then
-    WEB_USER="nginx"
-else
-    WEB_USER="www-data"
-fi
-
-chown -R $WEB_USER:$WEB_USER "$PAYMENTER_PATH/themes/$THEME_NAME"
-chmod -R 755 "$PAYMENTER_PATH/themes/$THEME_NAME"
+chown -R $WEB_USER:$WEB_USER "$PAYMENTER_PATH"
+chmod -R 755 "$PAYMENTER_PATH"
+chmod -R 775 "$PAYMENTER_PATH/storage"
+chmod -R 775 "$PAYMENTER_PATH/bootstrap/cache"
 
 echo -e "${GREEN}✅ Permissions set (owner: $WEB_USER)${NC}"
 
-# Step 11: Verify installation
+# Step 11: Build theme assets (if needed)
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}✅ Step 11: Verifying installation...${NC}"
+echo -e "${BLUE}⚡ Step 11: Building theme assets...${NC}"
 
-if [ -d "$PAYMENTER_PATH/themes/$THEME_NAME" ]; then
-    # Check for theme.json
-    if [ -f "$PAYMENTER_PATH/themes/$THEME_NAME/theme.json" ]; then
-        echo -e "${GREEN}✅ Theme configuration found${NC}"
-    else
-        echo -e "${YELLOW}⚠️  Warning: theme.json not found${NC}"
+cd "$PAYMENTER_PATH"
+
+# Check if package.json exists
+if [ -f "package.json" ]; then
+    echo -e "${YELLOW}   Installing npm dependencies...${NC}"
+    
+    # Temporarily give ownership to current user for npm
+    CURRENT_USER=$(logname 2>/dev/null || echo $SUDO_USER)
+    if [ -n "$CURRENT_USER" ]; then
+        chown -R $CURRENT_USER:$CURRENT_USER "$PAYMENTER_PATH"
     fi
     
-    # Count files
+    npm install --silent
+    
+    # Build if there's a build script
+    if grep -q '"build"' package.json; then
+        echo -e "${YELLOW}   Building assets...${NC}"
+        npm run build --silent
+    fi
+    
+    # Restore web server ownership
+    chown -R $WEB_USER:$WEB_USER "$PAYMENTER_PATH"
+fi
+
+echo -e "${GREEN}✅ Theme assets built${NC}"
+
+# Step 12: Clear Laravel cache
+echo ""
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BLUE}🧹 Step 12: Clearing Laravel cache...${NC}"
+
+cd "$PAYMENTER_PATH"
+php artisan view:clear 2>/dev/null
+php artisan cache:clear 2>/dev/null
+php artisan config:clear 2>/dev/null
+
+echo -e "${GREEN}✅ Cache cleared${NC}"
+
+# Step 13: Verify installation
+echo ""
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BLUE}✅ Step 13: Verifying installation...${NC}"
+
+if [ -d "$PAYMENTER_PATH/themes/$THEME_NAME" ]; then
     file_count=$(find "$PAYMENTER_PATH/themes/$THEME_NAME" -type f | wc -l)
     echo -e "${GREEN}✅ $file_count files installed${NC}"
 else
@@ -360,34 +383,13 @@ echo "║     2. Go to Settings → Theme                                     �
 echo "║     3. Select 'BytePays Theme'                                    ║"
 echo "║     4. Save changes                                               ║"
 echo "║                                                                   ║"
-echo "║  🔄 Clear cache (optional):                                       ║"
-echo "║     cd $PAYMENTER_PATH                                            ║"
-echo "║     php artisan cache:clear                                       ║"
-echo "║     php artisan view:clear                                        ║"
+echo "║  🔄 To clear cache manually:                                      ║"
+echo "║     cd $PAYMENTER_PATH && php artisan cache:clear                 ║"
 echo "║                                                                   ║"
 echo "║  Thank you for choosing BytePays Theme!                           ║"
 echo "║                                                                   ║"
 echo "╚═══════════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
-
-# Ask to clear cache (only in interactive mode)
-if [ $NON_INTERACTIVE -eq 0 ]; then
-    echo ""
-    echo -e "${YELLOW}Would you like to clear Paymenter cache now? (y/n)${NC}"
-    read -r clear_cache
-
-    if [[ "$clear_cache" == "y" || "$clear_cache" == "Y" ]]; then
-        echo -e "${BLUE}Clearing cache...${NC}"
-        cd "$PAYMENTER_PATH"
-        php artisan cache:clear
-        php artisan view:clear
-        php artisan config:clear
-        echo -e "${GREEN}✅ Cache cleared!${NC}"
-    fi
-else
-    echo ""
-    echo -e "${YELLOW}💡 To clear cache: cd $PAYMENTER_PATH && php artisan cache:clear${NC}"
-fi
 
 echo ""
 echo -e "${CYAN}🚀 Enjoy your new BytePays Theme!${NC}"
