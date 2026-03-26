@@ -100,19 +100,38 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Step 1: Install required packages
+# Step 1: Install required packages (Fixed version)
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${BLUE}📦 Step 1: Installing required dependencies...${NC}"
 
+# Update package list
 apt update -qq
-apt install -y curl unzip nodejs npm git
 
-if [ $? -ne 0 ]; then
-    echo -e "${RED}❌ Failed to install dependencies${NC}"
-    exit 1
+# Install basic tools
+apt install -y curl unzip git -qq
+
+# Install Node.js and npm properly
+echo -e "${YELLOW}   Installing Node.js and npm...${NC}"
+
+# Check if node is installed
+if command -v node &> /dev/null; then
+    NODE_VERSION=$(node --version)
+    echo -e "${GREEN}   Node.js already installed: $NODE_VERSION${NC}"
+else
+    # Install Node.js 20.x using NodeSource repository
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt install -y nodejs -qq
+    echo -e "${GREEN}   Node.js installed: $(node --version)${NC}"
 fi
-echo -e "${GREEN}✅ Dependencies installed${NC}"
+
+# Check if npm is installed
+if ! command -v npm &> /dev/null; then
+    echo -e "${YELLOW}   Installing npm...${NC}"
+    apt install -y npm -qq
+fi
+
+echo -e "${GREEN}✅ Dependencies installed: curl, unzip, git, nodejs, npm${NC}"
 
 # Step 2: Check if Paymenter exists
 echo ""
@@ -299,8 +318,8 @@ echo -e "${BLUE}🔧 Step 10: Setting permissions...${NC}"
 
 chown -R $WEB_USER:$WEB_USER "$PAYMENTER_PATH"
 chmod -R 755 "$PAYMENTER_PATH"
-chmod -R 775 "$PAYMENTER_PATH/storage"
-chmod -R 775 "$PAYMENTER_PATH/bootstrap/cache"
+chmod -R 775 "$PAYMENTER_PATH/storage" 2>/dev/null
+chmod -R 775 "$PAYMENTER_PATH/bootstrap/cache" 2>/dev/null
 
 echo -e "${GREEN}✅ Permissions set (owner: $WEB_USER)${NC}"
 
@@ -311,26 +330,29 @@ echo -e "${BLUE}⚡ Step 11: Building theme assets...${NC}"
 
 cd "$PAYMENTER_PATH"
 
-# Check if package.json exists
-if [ -f "package.json" ]; then
-    echo -e "${YELLOW}   Installing npm dependencies...${NC}"
+# Check if there's a package.json in the theme
+if [ -f "themes/$THEME_NAME/package.json" ]; then
+    echo -e "${YELLOW}   Installing theme dependencies...${NC}"
     
     # Temporarily give ownership to current user for npm
     CURRENT_USER=$(logname 2>/dev/null || echo $SUDO_USER)
     if [ -n "$CURRENT_USER" ]; then
-        chown -R $CURRENT_USER:$CURRENT_USER "$PAYMENTER_PATH"
+        chown -R $CURRENT_USER:$CURRENT_USER "$PAYMENTER_PATH/themes/$THEME_NAME"
     fi
     
-    npm install --silent
+    cd "themes/$THEME_NAME"
+    npm install --silent 2>/dev/null
     
     # Build if there's a build script
-    if grep -q '"build"' package.json; then
+    if grep -q '"build"' package.json 2>/dev/null; then
         echo -e "${YELLOW}   Building assets...${NC}"
-        npm run build --silent
+        npm run build --silent 2>/dev/null
     fi
     
+    cd "$PAYMENTER_PATH"
+    
     # Restore web server ownership
-    chown -R $WEB_USER:$WEB_USER "$PAYMENTER_PATH"
+    chown -R $WEB_USER:$WEB_USER "$PAYMENTER_PATH/themes/$THEME_NAME"
 fi
 
 echo -e "${GREEN}✅ Theme assets built${NC}"
@@ -355,6 +377,11 @@ echo -e "${BLUE}✅ Step 13: Verifying installation...${NC}"
 if [ -d "$PAYMENTER_PATH/themes/$THEME_NAME" ]; then
     file_count=$(find "$PAYMENTER_PATH/themes/$THEME_NAME" -type f | wc -l)
     echo -e "${GREEN}✅ $file_count files installed${NC}"
+    
+    # Check for theme.json
+    if [ -f "$PAYMENTER_PATH/themes/$THEME_NAME/theme.json" ]; then
+        echo -e "${GREEN}✅ Theme configuration found${NC}"
+    fi
 else
     echo -e "${RED}❌ Installation verification failed${NC}"
     rm -rf "$TEMP_DIR"
