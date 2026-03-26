@@ -100,38 +100,59 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Step 1: Install required packages (Fixed version)
+# Step 1: Fix broken packages and install dependencies
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${BLUE}📦 Step 1: Installing required dependencies...${NC}"
 
-# Update package list
-apt update -qq
+# First, fix any broken packages
+echo -e "${YELLOW}   Checking for broken packages...${NC}"
+apt --fix-broken install -y -qq 2>/dev/null
 
 # Install basic tools
-apt install -y curl unzip git -qq
+apt install -y curl unzip git -qq 2>/dev/null
 
-# Install Node.js and npm properly
-echo -e "${YELLOW}   Installing Node.js and npm...${NC}"
-
-# Check if node is installed
+# Check if Node.js is installed and remove if there are conflicts
 if command -v node &> /dev/null; then
     NODE_VERSION=$(node --version)
-    echo -e "${GREEN}   Node.js already installed: $NODE_VERSION${NC}"
+    echo -e "${YELLOW}   Node.js already installed: $NODE_VERSION${NC}"
+    
+    # Check if npm is working
+    if ! command -v npm &> /dev/null; then
+        echo -e "${YELLOW}   npm not found, reinstalling Node.js...${NC}"
+        apt remove -y nodejs npm -qq 2>/dev/null
+        apt autoremove -y -qq 2>/dev/null
+        NEED_NODE_INSTALL=1
+    else
+        echo -e "${GREEN}   npm is available${NC}"
+        NEED_NODE_INSTALL=0
+    fi
 else
-    # Install Node.js 20.x using NodeSource repository
+    NEED_NODE_INSTALL=1
+fi
+
+# Install Node.js if needed
+if [ $NEED_NODE_INSTALL -eq 1 ]; then
+    echo -e "${YELLOW}   Installing Node.js 20.x...${NC}"
+    
+    # Clean up any existing nodejs/npm
+    apt remove -y nodejs npm 2>/dev/null
+    apt autoremove -y 2>/dev/null
+    
+    # Install Node.js from NodeSource
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    apt install -y nodejs -qq
-    echo -e "${GREEN}   Node.js installed: $(node --version)${NC}"
+    apt install -y nodejs -qq 2>/dev/null
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}   Node.js installed: $(node --version)${NC}"
+        echo -e "${GREEN}   npm installed: $(npm --version)${NC}"
+    else
+        echo -e "${RED}   Failed to install Node.js${NC}"
+        exit 1
+    fi
 fi
 
-# Check if npm is installed
-if ! command -v npm &> /dev/null; then
-    echo -e "${YELLOW}   Installing npm...${NC}"
-    apt install -y npm -qq
-fi
-
-echo -e "${GREEN}✅ Dependencies installed: curl, unzip, git, nodejs, npm${NC}"
+echo -e "${GREEN}✅ Dependencies installed${NC}"
 
 # Step 2: Check if Paymenter exists
 echo ""
@@ -323,44 +344,10 @@ chmod -R 775 "$PAYMENTER_PATH/bootstrap/cache" 2>/dev/null
 
 echo -e "${GREEN}✅ Permissions set (owner: $WEB_USER)${NC}"
 
-# Step 11: Build theme assets (if needed)
+# Step 11: Clear Laravel cache
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}⚡ Step 11: Building theme assets...${NC}"
-
-cd "$PAYMENTER_PATH"
-
-# Check if there's a package.json in the theme
-if [ -f "themes/$THEME_NAME/package.json" ]; then
-    echo -e "${YELLOW}   Installing theme dependencies...${NC}"
-    
-    # Temporarily give ownership to current user for npm
-    CURRENT_USER=$(logname 2>/dev/null || echo $SUDO_USER)
-    if [ -n "$CURRENT_USER" ]; then
-        chown -R $CURRENT_USER:$CURRENT_USER "$PAYMENTER_PATH/themes/$THEME_NAME"
-    fi
-    
-    cd "themes/$THEME_NAME"
-    npm install --silent 2>/dev/null
-    
-    # Build if there's a build script
-    if grep -q '"build"' package.json 2>/dev/null; then
-        echo -e "${YELLOW}   Building assets...${NC}"
-        npm run build --silent 2>/dev/null
-    fi
-    
-    cd "$PAYMENTER_PATH"
-    
-    # Restore web server ownership
-    chown -R $WEB_USER:$WEB_USER "$PAYMENTER_PATH/themes/$THEME_NAME"
-fi
-
-echo -e "${GREEN}✅ Theme assets built${NC}"
-
-# Step 12: Clear Laravel cache
-echo ""
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}🧹 Step 12: Clearing Laravel cache...${NC}"
+echo -e "${BLUE}🧹 Step 11: Clearing Laravel cache...${NC}"
 
 cd "$PAYMENTER_PATH"
 php artisan view:clear 2>/dev/null
@@ -369,10 +356,10 @@ php artisan config:clear 2>/dev/null
 
 echo -e "${GREEN}✅ Cache cleared${NC}"
 
-# Step 13: Verify installation
+# Step 12: Verify installation
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}✅ Step 13: Verifying installation...${NC}"
+echo -e "${BLUE}✅ Step 12: Verifying installation...${NC}"
 
 if [ -d "$PAYMENTER_PATH/themes/$THEME_NAME" ]; then
     file_count=$(find "$PAYMENTER_PATH/themes/$THEME_NAME" -type f | wc -l)
